@@ -202,10 +202,48 @@ Timeouts are hierarchical:
 
 ### Memory Considerations
 
-**gocbcore DCP buffers**: If using DCP (Data Change Protocol), be aware that v7.1.18+ uses large buffered channels (default 8MB = ~350k items per connection). Configure via:
+**gocbcore DCP buffers**: Starting with gocbcore v7.1.18 (GOCBC-984), the `memdClient.run()` allocates a buffered channel for all connections, not just DCP connections. This affects memory usage:
+
+- **Impact**: Each connection to a cluster node allocates ~2.8MB for the `dcpBufferQ` channel (349,526 pointer slots)
+- **Calculation**: `dcpQueueSize = (8MB + 23) / 24 = 349,526 items`
+- **Example**: 3-node cluster = ~8.4MB base memory increase
+
+For actual DCP usage or to reduce memory footprint:
 ```go
-config.DcpBufferSize = 1 * 1024 * 1024 // Reduce to 1MB
+config.DcpBufferSize = 1 * 1024 * 1024 // Reduce from 8MB to 1MB
 ```
+
+**Memory profiling tool**: Use `check_memory_impact.go` to analyze connection-related memory allocation in your environment.
+
+## Dependency Management
+
+### Analyzing Version Changes
+
+When investigating issues related to dependency updates, especially for gocbcore:
+
+```bash
+# Check current dependencies
+go list -m all | grep gocbcore
+
+# Compare versions from git repositories
+git clone https://github.com/couchbase/gocbcore.git /tmp/gocbcore
+cd /tmp/gocbcore
+git log --oneline v7.1.15..v7.1.18  # Example version comparison
+git diff v7.1.15..v7.1.18 --stat
+```
+
+**Key dependencies to monitor:**
+- `gocbcore/v10`: Core protocol implementation - changes here can significantly impact performance and memory
+- `gocbcoreps`: Protostellar (gRPC) backend
+- `gocbconnstr`: Connection string parsing
+
+### Memory Impact from Updates
+
+When dependencies are updated and memory usage increases:
+1. Check gocbcore changelog for buffer size changes (especially DCP-related)
+2. Use `check_memory_impact.go` to measure before/after
+3. Profile with `go tool pprof` for detailed allocation analysis
+4. Consider connection pool size and cluster node count when calculating impact
 
 ## Issue Tracking
 
